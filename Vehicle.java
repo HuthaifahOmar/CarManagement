@@ -1,4 +1,4 @@
-package CarProjDS2;
+package com.example.carprojds2;
 
 class Vehicle implements Comparable<Vehicle> {
     static final String AVAILABLE = "AVAILABLE";

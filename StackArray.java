@@ -1,4 +1,4 @@
-package CarProjDS2;
+package com.example.carprojds2;
 
 public class StackArray<T extends Comparable<T>> {
     private T []stack;
@@ -77,8 +77,8 @@ public class StackArray<T extends Comparable<T>> {
                 result = true;
             }
         }
-            while (!stackArray2.isEmpty())
-                this.push(stackArray2.pop());
+        while (!stackArray2.isEmpty())
+            this.push(stackArray2.pop());
         return result;
     }
 }

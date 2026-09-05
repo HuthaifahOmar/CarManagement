@@ -1,4 +1,4 @@
-package CarProjDS2;
+package com.example.carprojds2;
 
 class Transaction implements Comparable<Transaction> {
     private static int nextTransactionId = 1;

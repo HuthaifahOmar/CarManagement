@@ -1,4 +1,4 @@
-package CarProjDS2;
+package com.example.carprojds2;
 
 class ServiceRequest implements Comparable<ServiceRequest> {
     private static int nextRequestId = 1;

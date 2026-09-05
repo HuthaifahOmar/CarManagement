@@ -1,4 +1,4 @@
-package CarProjDS2;
+package com.example.carprojds2;
 
 import javafx.application.Application;
 import javafx.application.Platform;
@@ -28,11 +28,13 @@ import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 
 import java.io.File;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
 import java.util.function.Function;
 
-public class MainApp extends Application {
+public class Main extends Application {
     private final CarAgency agency = new CarAgency();
 
     private final TableView<Customer> customerTable = new TableView<>();
@@ -68,8 +70,6 @@ public class MainApp extends Application {
     private TextField priceField;
     private TextField colorField;
     private ComboBox<String> statusBox;
-    private DatePicker receiveStartDatePicker;
-    private DatePicker receiveEndDatePicker;
 
     private TextField maintenanceSearchIdField;
     private TextField serviceVehicleIdField;
@@ -83,7 +83,10 @@ public class MainApp extends Application {
     private TextField reservationSearchIdField;
     private TextField reservationVehicleIdField;
     private TextField reservationCustomerIdField;
-    private DatePicker reservationDatePicker;
+    private DatePicker reservationStartDatePicker;
+    private DatePicker reservationEndDatePicker;
+    private TextField reservationPriceField;
+    private TextField reservationDiscountField;
 
     private TextField transactionSearchIdField;
     private TextField transactionCustomerIdField;
@@ -112,7 +115,7 @@ public class MainApp extends Application {
                 tab("Reservations", reservationsTab()),
                 tab("Transactions", transactionsTab()),
                 tab("Undo / Redo", undoRedoTab()),
-                tab("Report", reportTab()),
+                tab("Report", reportTab(stage)),
                 tab("Files / Demo", filesTab(stage))
         );
         configureTables();
@@ -168,28 +171,18 @@ public class MainApp extends Application {
         statusBox = new ComboBox<>(FXCollections.observableArrayList(Vehicle.STATUSES));
         statusBox.setValue(Vehicle.AVAILABLE);
         statusBox.setDisable(true);
-        receiveStartDatePicker = new DatePicker(LocalDate.now());
-        receiveEndDatePicker = new DatePicker(LocalDate.now().plusDays(1));
 
         GridPane form = form(
                 item("Search by ID", vehicleSearchIdField), item("Owner Customer ID", ownerCustomerIdField),
                 item("Make", makeField), item("Model", modelField),
                 item("Year", yearField), item("Price", priceField), item("Color", colorField),
-                item("Status", statusBox), item("Receive Start", receiveStartDatePicker), item("Receive End", receiveEndDatePicker)
+                item("Status", statusBox)
         );
         HBox buttons = buttons(
                 action("Add", () -> agency.addVehicle(readNewVehicle())),
                 action("Search", this::searchVehicle),
                 action("Update", () -> agency.updateVehicle(readSelectedVehicle())),
                 action("Delete", () -> agency.deleteVehicle(requireSelectedVehicleId())),
-                action("Mark Sold", () -> agency.markSold(requireSelectedVehicleId())),
-                action("In Service", () -> agency.changeVehicleStatus(requireSelectedVehicleId(), Vehicle.IN_SERVICE)),
-                action("Available", () -> agency.changeVehicleStatus(requireSelectedVehicleId(), Vehicle.AVAILABLE)),
-                action("Receive Car", () -> agency.receiveVehicle(requireSelectedVehicleId(), dateValue(receiveStartDatePicker, "Receive start date"),
-                        dateValue(receiveEndDatePicker, "Receive end date"))),
-                action("End Receiving", () -> agency.endReceiving(requireSelectedVehicleId())),
-                action("Ascending", () -> refreshVehicles(true)),
-                action("Descending", () -> refreshVehicles(false)),
                 action("Clear", this::clearVehicleForm),
                 undoButton(),
                 redoButton()
@@ -242,11 +235,16 @@ public class MainApp extends Application {
         reservationSearchIdField = text("example: 1");
         reservationVehicleIdField = text("example: 50");
         reservationCustomerIdField = text("example: 1");
-        reservationDatePicker = new DatePicker(LocalDate.now());
+        reservationStartDatePicker = new DatePicker(LocalDate.now());
+        reservationEndDatePicker = new DatePicker(LocalDate.now().plusDays(1));
+        reservationPriceField = text("example: 300");
+        reservationDiscountField = text("example: 25");
 
         GridPane form = form(
                 item("Search by ID", reservationSearchIdField), item("Vehicle ID", reservationVehicleIdField),
-                item("Customer ID", reservationCustomerIdField), item("Date", reservationDatePicker)
+                item("Customer ID", reservationCustomerIdField), item("Start Date", reservationStartDatePicker),
+                item("End Date", reservationEndDatePicker), item("Reservation Price", reservationPriceField),
+                item("Discount", reservationDiscountField)
         );
         HBox buttons = buttons(
                 action("Add Reservation", () -> agency.addReservation(readReservation())),
@@ -305,6 +303,7 @@ public class MainApp extends Application {
                 fileButton(stage, "Load Customers", path -> agency.loadCustomers(path)),
                 fileButton(stage, "Load Vehicles", path -> agency.loadVehicles(path)),
                 fileButton(stage, "Load Requests", path -> agency.loadServiceRequests(path)),
+                fileButton(stage, "Load Reservations", path -> agency.loadReservations(path)),
                 fileButton(stage, "Load Services", path -> agency.loadServices(path)),
                 fileButton(stage, "Load Transactions", path -> agency.loadTransactions(path))
         );
@@ -312,10 +311,11 @@ public class MainApp extends Application {
         return pane(row1, row2);
     }
 
-    private VBox reportTab() {
+    private VBox reportTab(Stage stage) {
         reportArea.setEditable(false);
         reportArea.setWrapText(true);
-        HBox buttons = buttons(action("Refresh Report", () -> reportArea.setText(agency.report())), undoButton(), redoButton());
+        HBox buttons = buttons(action("Refresh Report", () -> reportArea.setText(agency.report())),
+                saveReportButton(stage), undoButton(), redoButton());
         return pane(buttons, reportArea);
     }
 
@@ -334,9 +334,7 @@ public class MainApp extends Application {
                 column("Year", v -> text(v.getYear())),
                 column("Price", v -> money(v.getPrice())),
                 column("Color", Vehicle::getColor),
-                column("Status", Vehicle::getStatus),
-                column("Receive Start", Vehicle::getReceiveStartDate),
-                column("Receive End", Vehicle::getReceiveEndDate)
+                column("Status", Vehicle::getStatus)
         );
         maintenanceTable.getColumns().addAll(
                 column("Request ID", r -> text(r.getRequestId())),
@@ -364,7 +362,11 @@ public class MainApp extends Application {
                 column("Reservation ID", r -> text(r.getReservationId())),
                 column("Vehicle ID", r -> text(r.getVehicleId())),
                 column("Customer ID", r -> text(r.getCustomerId())),
-                column("Date", ReservationRequest::getDate),
+                column("Start Date", ReservationRequest::getStartDate),
+                column("End Date", ReservationRequest::getEndDate),
+                column("Price", r -> money(r.getPrice())),
+                column("Discount", r -> money(r.getDiscount())),
+                column("Paid Amount", r -> money(r.getPaidAmount())),
                 column("Status", ReservationRequest::getStatus)
         );
         transactionTable.getColumns().addAll(
@@ -423,7 +425,10 @@ public class MainApp extends Application {
                 reservationSearchIdField.setText(text(reservation.getReservationId()));
                 reservationVehicleIdField.setText(text(reservation.getVehicleId()));
                 reservationCustomerIdField.setText(text(reservation.getCustomerId()));
-                reservationDatePicker.setValue(LocalDate.parse(reservation.getDate()));
+                reservationStartDatePicker.setValue(LocalDate.parse(reservation.getStartDate()));
+                reservationEndDatePicker.setValue(LocalDate.parse(reservation.getEndDate()));
+                reservationPriceField.setText(text(reservation.getPrice()));
+                reservationDiscountField.setText(text(reservation.getDiscount()));
             }
         });
         transactionTable.getSelectionModel().selectedItemProperty().addListener((obs, oldValue, transaction) -> {
@@ -471,7 +476,10 @@ public class MainApp extends Application {
     private ReservationRequest readReservation() {
         return new ReservationRequest(parseInt(reservationVehicleIdField, "Vehicle ID"),
                 parseInt(reservationCustomerIdField, "Customer ID"),
-                dateValue(reservationDatePicker, "Reservation date"), "PENDING");
+                dateValue(reservationStartDatePicker, "Reservation start date"),
+                dateValue(reservationEndDatePicker, "Reservation end date"),
+                parseDouble(reservationPriceField, "Reservation price"),
+                parseDouble(reservationDiscountField, "Reservation discount"), "PENDING");
     }
 
     private Transaction readTransaction() {
@@ -522,8 +530,6 @@ public class MainApp extends Application {
         priceField.setText(text(vehicle.getPrice()));
         colorField.setText(vehicle.getColor());
         statusBox.setValue(vehicle.getStatus());
-        setDatePicker(receiveStartDatePicker, vehicle.getReceiveStartDate());
-        setDatePicker(receiveEndDatePicker, vehicle.getReceiveEndDate());
     }
 
     private void processService() {
@@ -605,8 +611,6 @@ public class MainApp extends Application {
         priceField.clear();
         colorField.clear();
         statusBox.setValue(Vehicle.AVAILABLE);
-        receiveStartDatePicker.setValue(LocalDate.now());
-        receiveEndDatePicker.setValue(LocalDate.now().plusDays(1));
     }
 
     private void clearMaintenanceForm() {
@@ -630,7 +634,10 @@ public class MainApp extends Application {
         reservationSearchIdField.clear();
         reservationVehicleIdField.clear();
         reservationCustomerIdField.clear();
-        reservationDatePicker.setValue(LocalDate.now());
+        reservationStartDatePicker.setValue(LocalDate.now());
+        reservationEndDatePicker.setValue(LocalDate.now().plusDays(1));
+        reservationPriceField.clear();
+        reservationDiscountField.clear();
     }
 
     private void clearTransactionForm() {
@@ -693,6 +700,27 @@ public class MainApp extends Application {
                 }
             } catch (Throwable throwable) {
                 showExceptionPopup(title, throwable);
+            }
+        });
+        return button;
+    }
+
+    private Button saveReportButton(Stage stage) {
+        Button button = new Button("Save Report");
+        button.setOnAction(event -> {
+            try {
+                reportArea.setText(agency.report());
+                FileChooser chooser = new FileChooser();
+                chooser.setTitle("Save Report");
+                chooser.setInitialFileName("car-agency-report.txt");
+                chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Text files", "*.txt"));
+                File file = chooser.showSaveDialog(stage);
+                if (file != null) {
+                    Files.writeString(file.toPath(), reportArea.getText(), StandardCharsets.UTF_8);
+                    append("Report saved to " + file.getAbsolutePath());
+                }
+            } catch (Throwable throwable) {
+                showExceptionPopup("Save Report", throwable);
             }
         });
         return button;
@@ -874,14 +902,6 @@ public class MainApp extends Application {
         return picker.getValue().toString();
     }
 
-    private void setDatePicker(DatePicker picker, String value) {
-        if (value == null || value.trim().isEmpty()) {
-            picker.setValue(null);
-        } else {
-            picker.setValue(LocalDate.parse(value.trim()));
-        }
-    }
-
     private void append(String message) {
         log.appendText(message + System.lineSeparator());
     }
@@ -920,3 +940,4 @@ public class MainApp extends Application {
         void run(Path path) throws Exception;
     }
 }
+

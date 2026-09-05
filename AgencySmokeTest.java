@@ -1,4 +1,4 @@
-package CarProjDS2;
+package com.example.carprojds2;
 
 import java.time.LocalDate;
 
@@ -40,6 +40,38 @@ public class AgencySmokeTest {
         }
         require(soldReceiveRejected, "Sold vehicles cannot be received.");
 
+        agency.receiveVehicle(40, LocalDate.now().toString(), LocalDate.now().plusDays(2).toString());
+        boolean soldReservationRejected = false;
+        try {
+            agency.addReservation(new ReservationRequest(80, 2, LocalDate.now().plusDays(1).toString(),
+                    LocalDate.now().plusDays(2).toString(), 100, 0, "PENDING"));
+        } catch (IllegalArgumentException ex) {
+            soldReservationRejected = true;
+        }
+        require(soldReservationRejected, "Sold vehicles cannot be reserved.");
+
+        agency.addReservation(new ReservationRequest(40, 2, LocalDate.now().plusDays(3).toString(),
+                LocalDate.now().plusDays(4).toString(), 200, 25, "PENDING"));
+        require(agency.reservations()[0].getStatus().equals("PAID"), "Reservation should be paid before it leaves pending.");
+        require(agency.transactions()[0].getTransactionType().equals("RESERVATION_PAYMENT"), "Reservation payment should create a transaction.");
+        require(agency.transactions()[0].getAmount() == 175, "Reservation payment should apply the discount.");
+        require(agency.waitingCustomers()[0].getCustomerId() == 3, "Reservation should serve the first waiting customer.");
+        boolean overlapRejected = false;
+        try {
+            agency.addReservation(new ReservationRequest(40, 3, LocalDate.now().plusDays(4).toString(),
+                    LocalDate.now().plusDays(5).toString(), 200, 0, "PENDING"));
+        } catch (IllegalArgumentException ex) {
+            overlapRejected = true;
+        }
+        require(overlapRejected, "Overlapping reservations for the same vehicle should be rejected.");
+        agency.addReservation(new ReservationRequest(40, 3, LocalDate.now().plusDays(5).toString(),
+                LocalDate.now().plusDays(6).toString(), 200, 0, "PENDING"));
+        agency.endReceiving(40);
+        require(agency.processReservationForVehicle(40).getCustomerId() == 2, "First paid reservation should be processed first.");
+        agency.undo();
+        require(agency.reservations()[0].getCustomerId() == 2, "Undo process reservation should return it to the table.");
+        require(agency.findVehicle(40).getStatus().equals(Vehicle.AVAILABLE), "Undo process reservation should restore vehicle availability.");
+
         agency.createServiceRequest(new ServiceRequest(101, 50, 1, "Oil Change", yesterday, "PENDING"));
         boolean duplicateRejected = false;
         try {
@@ -54,7 +86,11 @@ public class AgencySmokeTest {
         agency.undo();
         require(agency.maintenanceRequests()[0].getRequestId() == 101, "Undo process should return request 101 to the maintenance table.");
         require(agency.processNextServiceRequest().getRequestId() == 101, "Redo after undo process should allow request 101 to process first again.");
+        int transactionCountBeforeServicePayment = agency.transactions().length;
         agency.completeCurrentService(120);
+        Transaction servicePayment = agency.transactions()[agency.transactions().length - 1];
+        require(servicePayment.getTransactionType().equals("SERVICE_PAYMENT"), "Completing maintenance should create a service payment transaction.");
+        require(servicePayment.getAmount() == 120, "Service payment transaction should use the maintenance cost.");
         agency.undo();
         require(agency.maintenanceRequests()[0].getRequestId() == 101, "Undo complete should return request 101 to the maintenance table.");
         require(agency.serviceHistoryNewestFirst().length == 0, "Undo complete should remove the completed service from service history.");
@@ -66,13 +102,14 @@ public class AgencySmokeTest {
         agency.completeCurrentService(90);
 
         agency.createTransaction(new Transaction(1, 0, 1000, "DEPOSIT", "2026-09-05"));
-        int generatedTransactionId = agency.transactions()[0].getTransactionId();
+        Transaction[] afterDeposit = agency.transactions();
+        int generatedTransactionId = afterDeposit[afterDeposit.length - 1].getTransactionId();
         agency.applyDiscount(generatedTransactionId, 100);
-        require(agency.transactions()[0].getAmount() == 900, "Discount should reduce transaction amount.");
+        require(agency.transactions()[agency.transactions().length - 1].getAmount() == 900, "Discount should reduce transaction amount.");
         agency.undo();
-        require(agency.transactions()[0].getAmount() == 1000, "Undo should reverse the discount first.");
+        require(agency.transactions()[agency.transactions().length - 1].getAmount() == 1000, "Undo should reverse the discount first.");
         agency.redo();
-        require(agency.transactions()[0].getAmount() == 900, "Redo should reapply the discount.");
+        require(agency.transactions()[agency.transactions().length - 1].getAmount() == 900, "Redo should reapply the discount.");
 
         agency.createServiceRequest(new ServiceRequest(160, 60, 1, "Integrated Workflow Service", yesterday, "PENDING"));
         require(agency.processNextServiceRequest().getVehicleId() == 60, "Integrated workflow should process vehicle 60.");

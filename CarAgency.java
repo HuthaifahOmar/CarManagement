@@ -1,4 +1,6 @@
-package CarProjDS2;
+package com.example.carprojds2;
+
+
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -263,13 +265,18 @@ public class CarAgency {
                 request.getServiceType(), request.getDate(), cost, "COMPLETED");
         addServiceInternal(service);
         serviceHistory.push(service);
+        Transaction payment = new Transaction(request.getCustomerId(), request.getVehicleId(), cost,
+                "SERVICE_PAYMENT", LocalDate.now().toString());
+        addTransactionInternal(payment);
         vehicle.setStatus(Vehicle.AVAILABLE);
         currentServiceRequest = null;
         Service savedService = service.copy();
         ServiceRequest savedRequest = request.copy();
+        Transaction savedPayment = payment.copy();
         record("Complete Service " + savedService.getServiceId(),
                 () -> {
                     removeServiceInternal(savedService.getServiceId());
+                    removeTransactionInternal(savedPayment.getTransactionId());
                     removeServiceFromHistory(savedService.getServiceId());
                     ServiceRequest restored = savedRequest.copy();
                     restored.setStatus("PENDING");
@@ -281,6 +288,7 @@ public class CarAgency {
                     removeRequestFromQueue(savedRequest.getRequestId());
                     addServiceInternal(savedService.copy());
                     serviceHistory.push(savedService.copy());
+                    addTransactionInternal(savedPayment.copy());
                     requireVehicle(savedRequest.getVehicleId()).setStatus(Vehicle.AVAILABLE);
                     currentServiceRequest = null;
                 });
@@ -355,17 +363,66 @@ public class CarAgency {
     }
 
     public void addReservation(ReservationRequest request) {
-        requireCustomer(request.getCustomerId());
         Vehicle vehicle = requireVehicle(request.getVehicleId());
-        if (vehicle.getStatus().equals(Vehicle.AVAILABLE)) {
-            throw new IllegalArgumentException("Reservations are only for unavailable vehicles.");
+        if (vehicle.getStatus().equals(Vehicle.SOLD)) {
+            throw new IllegalArgumentException("Sold cars cannot be reserved.");
         }
+        if (!vehicle.getStatus().equals(Vehicle.AVAILABLE)) {
+            throw new IllegalArgumentException("Reservations are only for cars that are  available.");
+        }
+        Customer nextCustomer = waitingQueue.peek();
+        if (nextCustomer == null) {
+            throw new IllegalArgumentException("Add the customer to the waiting queue first.");
+        }
+        if (nextCustomer.getCustomerId() != request.getCustomerId()) {
+            throw new IllegalArgumentException("The first customer in the waiting queue must be served before the next customer.");
+        }
+        LocalDate startDate = parseDate(request.getStartDate(), "Reservation start date");
+        LocalDate endDate = parseDate(request.getEndDate(), "Reservation end date");
+        if (endDate.isBefore(startDate)) {
+            throw new IllegalArgumentException("Reservation end date must be after or equal to reservation start date.");
+        }
+        if (hasReservationOverlap(request.getVehicleId(), startDate, endDate)) {
+            throw new IllegalArgumentException("This car already has a reservation during these dates.");
+        }
+        validateNonNegative(request.getPrice(), "Reservation price");
+        validateNonNegative(request.getDiscount(), "Reservation discount");
+        if (request.getDiscount() > request.getPrice()) {
+            throw new IllegalArgumentException("Reservation discount cannot be larger than the reservation price.");
+        }
+        if (request.getPaidAmount() <= 0) {
+            throw new IllegalArgumentException("Customer must pay before reservation can leave pending status.");
+        }
+        request.setStatus("PAID");
+        Transaction payment = new Transaction(request.getCustomerId(), request.getVehicleId(), request.getPaidAmount(),
+                "RESERVATION_PAYMENT", LocalDate.now().toString());
+        Customer servedCustomer = waitingQueue.dequeue();
         ReservationBucket bucket = bucketFor(request.getVehicleId(), true);
         enqueueOrFail(bucket.queue, request, "Reservation queue is full.");
+        addTransactionInternal(payment);
+        ReservationRequest savedRequest = request;
+        Transaction savedPayment = payment.copy();
+        record("Add Reservation " + request.getReservationId(),
+                () -> {
+                    removeReservationFromQueue(savedRequest.getReservationId());
+                    removeTransactionInternal(savedPayment.getTransactionId());
+                    enqueueFront(waitingQueue, servedCustomer, "Customer waiting queue is full.");
+                },
+                () -> {
+                    Customer next = waitingQueue.dequeue();
+                    if (next == null || next.getCustomerId() != savedRequest.getCustomerId()) {
+                        throw new IllegalStateException("Waiting queue order changed; cannot redo reservation.");
+                    }
+                    enqueueOrFail(bucketFor(savedRequest.getVehicleId(), true).queue, savedRequest, "Reservation queue is full.");
+                    addTransactionInternal(savedPayment.copy());
+                });
     }
 
     public ReservationRequest processReservationForVehicle(int vehicleId) {
         Vehicle vehicle = requireVehicle(vehicleId);
+        if (vehicle.getStatus().equals(Vehicle.SOLD)) {
+            throw new IllegalStateException("Sold cars cannot be reserved.");
+        }
         if (!vehicle.getStatus().equals(Vehicle.AVAILABLE)) {
             throw new IllegalStateException("Vehicle must be AVAILABLE before processing a reservation.");
         }
@@ -374,8 +431,28 @@ public class CarAgency {
             throw new IllegalStateException("No reservation queue exists for this vehicle.");
         }
         ReservationRequest request = bucket.queue.dequeue();
+        if (!request.getStatus().equals("PAID")) {
+            enqueueFront(bucket.queue, request, "Reservation queue is full.");
+            throw new IllegalStateException("Customer must pay before the reservation can be processed.");
+        }
+        String beforeStatus = vehicle.getStatus();
         request.setStatus("RESERVED");
         vehicle.setStatus(Vehicle.RESERVED);
+        ReservationRequest savedRequest = request;
+        record("Process Reservation " + savedRequest.getReservationId(),
+                () -> {
+                    savedRequest.setStatus("PAID");
+                    requireVehicle(vehicleId).setStatus(beforeStatus);
+                    enqueueFront(bucketFor(vehicleId, true).queue, savedRequest, "Reservation queue is full.");
+                },
+                () -> {
+                    ReservationRequest next = removeReservationFromQueue(savedRequest.getReservationId());
+                    if (next == null) {
+                        next = savedRequest;
+                    }
+                    next.setStatus("RESERVED");
+                    requireVehicle(vehicleId).setStatus(Vehicle.RESERVED);
+                });
         return request;
     }
 
@@ -503,8 +580,19 @@ public class CarAgency {
         }
 
         double totalTransactions = 0;
+        double netProfit = 0;
         for (int i = 0; i < transactionCount; i++) {
             totalTransactions += transactions[i].getAmount();
+            if (transactions[i].getTransactionType().equalsIgnoreCase("REFUND")) {
+                netProfit -= Math.abs(transactions[i].getAmount());
+            } else if (!transactions[i].getTransactionType().equalsIgnoreCase("SALE")) {
+                netProfit += transactions[i].getAmount();
+            }
+        }
+        for (Vehicle vehicle : vehicleList) {
+            if (vehicle.getStatus().equals(Vehicle.SOLD)) {
+                netProfit += vehicle.getPrice();
+            }
         }
 
         StringBuilder builder = new StringBuilder();
@@ -523,6 +611,7 @@ public class CarAgency {
         builder.append("Completed services: ").append(serviceCount).append('\n');
         builder.append("Transactions: ").append(transactionCount).append('\n');
         builder.append("Total transaction amount: ").append(String.format("%.2f", totalTransactions)).append("\n\n");
+        builder.append("Net profit: ").append(String.format("%.2f", netProfit)).append("\n\n");
         builder.append("Cars by customer\n");
         for (int i = 0; i < customerCount; i++) {
             Customer customer = customers[i];
@@ -564,6 +653,23 @@ public class CarAgency {
     public void loadServiceRequests(Path path) throws IOException {
         readCsv(path, fields -> createServiceRequest(new ServiceRequest(parseInt(fields, 0), parseInt(fields, 1),
                 parseInt(fields, 2), fields[3], fields[4], valueOrDefault(fields, 5, "PENDING"))), 5);
+    }
+
+    public void loadReservations(Path path) throws IOException {
+        readCsv(path, fields -> {
+            if (fields.length >= 6) {
+                if (fields.length >= 8) {
+                    addReservation(new ReservationRequest(parseInt(fields, 0), parseInt(fields, 1), parseInt(fields, 2),
+                            fields[3], fields[4], parseDouble(fields, 5), parseDouble(fields, 6), fields[7]));
+                } else {
+                    addReservation(new ReservationRequest(parseInt(fields, 0), parseInt(fields, 1), parseInt(fields, 2),
+                            fields[3], fields[4], fields[5]));
+                }
+            } else {
+                addReservation(new ReservationRequest(parseInt(fields, 0), parseInt(fields, 1), parseInt(fields, 2),
+                        fields[3], fields[3], valueOrDefault(fields, 4, "PENDING")));
+            }
+        }, 4);
     }
 
     public void loadServices(Path path) throws IOException {
@@ -746,6 +852,40 @@ public class CarAgency {
                 removed = customer;
             } else {
                 enqueueOrFail(waitingQueue, customer, "Customer waiting queue is full.");
+            }
+        }
+        return removed;
+    }
+
+    private boolean hasReservationOverlap(int vehicleId, LocalDate startDate, LocalDate endDate) {
+        ReservationBucket bucket = bucketFor(vehicleId, false);
+        if (bucket == null) {
+            return false;
+        }
+        Object[] values = queueToArray(bucket.queue);
+        for (Object value : values) {
+            ReservationRequest reservation = (ReservationRequest) value;
+            LocalDate existingStart = parseDate(reservation.getStartDate(), "Reservation start date");
+            LocalDate existingEnd = parseDate(reservation.getEndDate(), "Reservation end date");
+            if (!endDate.isBefore(existingStart) && !startDate.isAfter(existingEnd)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private ReservationRequest removeReservationFromQueue(int reservationId) {
+        ReservationRequest removed = null;
+        for (int i = 0; i < reservationBucketCount; i++) {
+            Object[] values = queueToArray(reservationBuckets[i].queue);
+            reservationBuckets[i].queue.clear();
+            for (Object value : values) {
+                ReservationRequest reservation = (ReservationRequest) value;
+                if (reservation.getReservationId() == reservationId && removed == null) {
+                    removed = reservation;
+                } else {
+                    enqueueOrFail(reservationBuckets[i].queue, reservation, "Reservation queue is full.");
+                }
             }
         }
         return removed;
