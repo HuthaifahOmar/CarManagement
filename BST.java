@@ -55,7 +55,15 @@ public class BST <T extends Comparable<T>> {
     public void setRoot(TNode<T> root) {
         this.root = root;
     }
-
+    public TNode<T> getParent(TNode<T> node) {
+        TNode<T> parent = root;
+        if(node.data.compareTo(root.data) < 0) {
+            while(parent.left != node && parent.right != node) {
+                parent = parent.left;
+            }
+        }
+        return parent;
+    }
 
     public void insert(T data){
         if (root == null){

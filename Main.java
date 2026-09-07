@@ -918,20 +918,6 @@ public class Main extends Application {
         return String.format("%.2f", value);
     }
 
-    private String complexityText() {
-        return """
-                Time Complexity Analysis
-
-                AVL vehicle search, insert, and delete: O(log n) average and worst case because the tree rebalances after updates.
-                AVL ascending and descending traversal: O(n), visiting each vehicle once.
-                Customer array search, update, and delete: O(n), scanning by customerId.
-                Queue enqueue and dequeue: O(1), using the student's array queue with circular front and rear indexes.
-                Stack push and pop: O(1), using the student's array stack top index.
-                Displaying a queue, stack, transaction list, or service list: O(n), copying each item into the JavaFX table view.
-                Reservation lookup by vehicleId: O(v) for the number of reservation queues, then O(1) to enqueue or dequeue that vehicle's queue.
-                """;
-    }
-
     private interface ThrowingAction {
         void run() throws Exception;
     }
