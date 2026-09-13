@@ -76,9 +76,7 @@ class Vehicle implements Comparable<Vehicle> {
         this.model = model;
     }
 
-    int getYear() {
-        return year;
-    }
+    int getYear() {return year;}
 
     void setYear(int year) {
         this.year = year;

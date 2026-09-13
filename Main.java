@@ -263,7 +263,8 @@ public class Main extends Application {
         transactionVehicleIdField = text("example: 50");
         amountField = text("example: 1000");
         transactionTypeField = text("example: SALE");
-        transactionTypeField.setText("SALE");
+       transactionTypeField.setEditable(false);
+       transactionTypeField.setText("SALE");
         transactionDatePicker = new DatePicker(LocalDate.now());
         discountField = text("example: 100");
 

@@ -91,6 +91,34 @@ public class BST <T extends Comparable<T>> {
             }
         }
     }
+    public TNode getParent(TNode root, TNode target) {
+        // Base case: if tree is empty, target is null, or target is the root node
+        if (root == null || target == null || root == target) {
+            return null;
+        }
+
+        TNode parent = null;
+        TNode current = root;
+
+        // Traverse the tree using BST properties
+        while (current != null && current.data != target.data) {
+            parent = current;
+
+            if (target.data.compareTo( current.data)<0) {
+                current = current.left;
+            } else {
+                current = current.right;
+            }
+        }
+
+        // If the target node was found in the BST, return its parent
+        if (current != null) {
+            return parent;
+        }
+
+        // If the target node does not exist in the BST
+        return null;
+    }
     void inOrderTraversal() {
 
         inOrderTraversal(root);
@@ -110,6 +138,22 @@ public class BST <T extends Comparable<T>> {
 
         }
 
+    }
+    public void preOrder(TNode node) {
+        if (node == null) return;
+
+        System.out.print(node.data + " ");
+        preOrder(node.left);
+        preOrder(node.right);
+    }
+
+    // Postorder: Left -> Right -> Root
+    public void postOrder(TNode node) {
+        if (node == null) return;
+
+        postOrder(node.left);
+        postOrder(node.right);
+        System.out.print(node.data + " ");
     }
     int size() {
 
@@ -261,7 +305,103 @@ public class BST <T extends Comparable<T>> {
         return Math.max(leftHight, rightHight)+1;
 
     }
+    /*public static TreeNode convertToAVL(TreeNode root) {
+        if (root == null) {
+            return null;
+        }
 
+        // Dummy pseudo-root to simplify rotations at the top of the tree
+        TreeNode grandParent = new TreeNode(0);
+        grandParent.right = root;
+
+        // Step 1: Flatten BST into a right-skewed backbone (vine)
+        int nodeCount = createBackbone(grandParent);
+
+        // Step 2: Rebalance the vine into a height-balanced tree
+        createBalancedTree(grandParent, nodeCount);
+
+        return grandParent.right;
+    }
+
+    // Flattens the BST into a linked chain going right using right-rotations
+    private static int createBackbone(TreeNode grandParent) {
+        int count = 0;
+        TreeNode current = grandParent.right;
+
+        while (current != null) {
+            if (current.left != null) {
+                // Right rotation to convert left child into root/right chain
+                TreeNode leftChild = current.left;
+                current.left = leftChild.right;
+                leftChild.right = current;
+
+                // Attach to grandparent/parent
+                grandParent.right = leftChild;
+                current = leftChild;
+            } else {
+                // Move down the right vine
+                count++;
+                grandParent = current;
+                current = current.right;
+            }
+        }
+        return count;
+    }
+
+    // Reconstructs a balanced tree from the right-skewed vine
+    private static void createBalancedTree(TreeNode grandParent, int count) {
+        // Find the height of the largest perfect binary sub-tree
+        int m = (int) (Math.pow(2, Math.floor(Math.log(count + 1) / Math.log(2))) - 1);
+
+        // Perform initial rotations to handle leftover bottom-level leaves
+        compress(grandParent, count - m);
+
+        // Compress iteratively to build subtrees level by level
+        while (m > 1) {
+            m /= 2;
+            compress(grandParent, m);
+        }
+    }
+
+    // Performs 'count' left-rotations down the right vine
+    private static void compress(TreeNode grandParent, int count) {
+        TreeNode current = grandParent.right;
+
+        for (int i = 0; i < count; i++) {
+            if (current == null || current.right == null) break;
+
+            TreeNode child = current.right;
+            current.right = child.left;
+            child.left = current;
+
+            grandParent.right = child;
+            grandParent = child;
+            current = child.right;
+        }
+    }*/
+
+    /*public int getMinimumDifference(TreeNode root) {
+        inOrder(root);
+        return minDiff;
+    }
+
+    private void inOrder(TreeNode node) {
+        if (node == null) {
+            return;
+        }
+
+        // 1. Traverse left subtree
+        inOrder(node.left);
+
+        // 2. Process current node
+        if (prev != null) {
+            minDiff = Math.min(minDiff, node.val - prev);
+        }
+        prev = node.val; // Update previous node value
+
+        // 3. Traverse right subtree
+        inOrder(node.right);
+    }*/
 
 
 }

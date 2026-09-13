@@ -1023,7 +1023,7 @@ public class CarAgency {
 
     private void validateVehicle(Vehicle vehicle) {
         requirePositive(vehicle.getVehicleId(), "Vehicle ID");
-        if (vehicle.getYear() < 1886) {
+        if (vehicle.getYear() < 1886 || vehicle.getYear()>2026) {
             throw new IllegalArgumentException("Vehicle year is invalid.");
         }
         validateNonNegative(vehicle.getPrice(), "Vehicle price");
